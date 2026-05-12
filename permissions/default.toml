@@ -1,0 +1,17 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for tauri-plugin-litert. Allows model management and inference."
+permissions = [
+  "allow-load-model",
+  "allow-unload-model",
+  "allow-list-models",
+  "allow-get-model-info",
+  "allow-run-inference",
+  "allow-create-embedding",
+  "allow-load-lm-model",
+  "allow-unload-lm-model",
+  "allow-list-lm-models",
+  "allow-generate",
+  "allow-generate-stream",
+]

@@ -1,0 +1,7 @@
+services:
+  web-chat-dev:
+    name: "LiteRT Chat (web example)"
+    description: "Vite dev server for examples/web-chat"
+    commands:
+      start: cd /workspaces/tauri-plugin-litert/examples/web-chat && npm install --silent && npm run dev -- --port 5173 --host 0.0.0.0
+      ready: curl -sf http://localhost:5173/
