@@ -170,6 +170,15 @@ await unloadModel("mobilenet");
 
 ### Web-only setup
 
+> **Required headers** — the `@litertjs/core` WebAssembly backend uses `SharedArrayBuffer`,
+> which requires cross-origin isolation. Your server (or dev server) must send:
+> ```
+> Cross-Origin-Opener-Policy: same-origin
+> Cross-Origin-Embedder-Policy: require-corp
+> ```
+> With Vite, add these under `server.headers` in `vite.config.ts`. For production,
+> configure them in your CDN or reverse proxy.
+
 On web the plugin uses [`@litertjs/core`](https://ai.google.dev/edge/litert/web) —
 Google's official LiteRT.js runtime. Install it alongside the plugin bindings:
 
@@ -221,12 +230,15 @@ await loadLmModel({
   accelerator: "gpu",
 });
 
-// Listen for token chunks
-const unlisten = await listen("litert-lm://chunk", (event) => {
-  const { chunk, done, latencyMs } = event.payload;
+// Register the listener BEFORE calling generateStream to avoid missing early chunks.
+// The final event always has done: true; check error to distinguish success from failure.
+const unlistenRef: { fn: (() => void) | null } = { fn: null };
+unlistenRef.fn = await listen("litert-lm://chunk", (event) => {
+  const { chunk, done, latencyMs, error } = event.payload;
   if (done) {
-    console.log(`Done in ${latencyMs}ms`);
-    unlisten();
+    unlistenRef.fn?.();
+    if (error) console.error("generation failed:", error);
+    else console.log(`Done in ${latencyMs}ms`);
   } else {
     process.stdout.write(chunk);
   }
@@ -322,7 +334,8 @@ interface StreamChunk {
   modelId: string;
   chunk: string;
   done: boolean;
-  latencyMs?: number;  // set on the final chunk
+  latencyMs?: number;  // set on the final chunk when generation succeeded
+  error?: string;      // set on the final chunk when generation failed
 }
 ```
 
@@ -338,8 +351,11 @@ interface StreamChunk {
 - Models are downloaded and converted using the [LiteRT-LM CLI](https://ai.google.dev/edge/litert-lm/convert)
 
 > **Platform support**: LiteRT-LM runs on **desktop** (Linux, macOS, Windows) and **Android**.
-> There is no web runtime for LiteRT-LM yet. The web-chat example falls back to an
-> OpenAI-compatible API endpoint (Groq, OpenRouter, Ollama) configured via the toolbar.
+> There is no web runtime for LiteRT-LM yet. The web-chat example uses a three-tier
+> fallback for LLM generation on web:
+> 1. **MediaPipe GenAI** (`@mediapipe/tasks-genai`) — on-device inference via WebAssembly/WebGPU
+> 2. **OpenAI-compatible API** — any endpoint (Groq, OpenRouter, Ollama) configured via the toolbar
+> 3. **Mock** — echoes the prompt back, used when no other backend is available
 
 ## License
 

@@ -387,9 +387,13 @@ export async function generate(input: GenerateInput): Promise<GenerateOutput> {
  * @example
  * ```ts
  * import { listen } from "@tauri-apps/api/core";
- * const unlisten = await listen<StreamChunk>("litert-lm://chunk", (e) => {
- *   if (e.payload.done) unlisten();
- *   else process.stdout.write(e.payload.chunk);
+ * // Register the listener BEFORE calling generateStream.
+ * // Use a ref so the callback can call unlisten() on the final event.
+ * const ref: { fn: (() => void) | null } = { fn: null };
+ * ref.fn = await listen<StreamChunk>("litert-lm://chunk", (e) => {
+ *   const { chunk, done, error } = e.payload;
+ *   if (done) { ref.fn?.(); if (error) console.error(error); }
+ *   else process.stdout.write(chunk);
  * });
  * await generateStream({ modelId: "gemma", prompt: "Hello!" });
  * ```
