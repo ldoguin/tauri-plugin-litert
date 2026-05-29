@@ -260,6 +260,7 @@ impl<R: Runtime> LiteRt<R> {
         let result = self.run_inference(InferenceInput {
             model_id: input.model_id.clone(),
             inputs: vec![input.input],
+            input_types: None,
         })?;
 
         let embedding = result

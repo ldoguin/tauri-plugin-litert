@@ -15,7 +15,10 @@ pub fn init<R: Runtime, C: serde::de::DeserializeOwned>(
 ) -> Result<LiteRtLm<R>> {
     #[cfg(target_os = "android")]
     let handle = api
-        .register_android_plugin("com.plugin.litert", "LiteRtLmPlugin")
+        // Both LiteRt (inference) and LiteRtLm (generation) are handled by the
+    // merged LiteRtPlugin class. Registering LiteRtLmPlugin separately would
+    // overwrite the LiteRt registration in PluginManager's name-keyed map.
+    .register_android_plugin("com.plugin.litert", "LiteRtPlugin")
         .map_err(|e| crate::error::Error::Backend(e.to_string()))?;
 
     #[cfg(target_os = "ios")]

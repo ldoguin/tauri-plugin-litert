@@ -16,6 +16,10 @@ pub struct LoadLmModelOptions {
     pub max_tokens: Option<i32>,
     /// Directory for runtime caches (KV cache, compiled shaders).
     pub cache_dir: Option<String>,
+    /// Enable vision (multimodal) backend. Required for models like Gemma 4 E2B/E4B
+    /// that support image input. Passed as `visionBackend = Backend.GPU()` on Android.
+    #[serde(default)]
+    pub vision: bool,
 }
 
 /// Metadata returned after a model is loaded.
@@ -37,6 +41,8 @@ pub struct GenerateInput {
     pub sampler: SamplerOptions,
     /// Optional system instruction prepended to the conversation.
     pub system_instruction: Option<String>,
+    /// Optional base64-encoded image bytes (no data-URL prefix) for multimodal models.
+    pub image: Option<String>,
 }
 
 /// Sampling parameters exposed to the frontend.

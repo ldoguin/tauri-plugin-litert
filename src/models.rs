@@ -51,6 +51,10 @@ pub struct InferenceInput {
     pub model_id: String,
     /// Flat float32 arrays, one per input tensor (in order).
     pub inputs: Vec<Vec<f32>>,
+    /// Optional element type per tensor: "float" (default) or "int32".
+    /// On Android, "int32" tensors are written via writeInt instead of writeFloat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_types: Option<Vec<String>>,
 }
 
 /// Output of a single inference run.

@@ -36,6 +36,8 @@ export interface InferenceInput {
   modelId: string;
   /** One flat Float32 array per input tensor, in order. */
   inputs: number[][];
+  /** Optional element type per tensor. "int32" triggers writeInt on Android. Defaults to "float". */
+  inputTypes?: ("float" | "int32")[];
 }
 
 export interface InferenceOutput {
@@ -67,6 +69,8 @@ export interface LoadLmModelOptions {
   accelerator?: Accelerator;
   maxTokens?: number;
   cacheDir?: string;
+  /** Enable vision (multimodal) backend for models like Gemma 4 E2B/E4B. */
+  vision?: boolean;
 }
 
 export interface LmModelInfo {

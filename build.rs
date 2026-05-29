@@ -15,7 +15,9 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
-    tauri_plugin::Builder::new(COMMANDS).build();
+    tauri_plugin::Builder::new(COMMANDS)
+        .android_path("android")
+        .build();
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         if let Ok(dir) = std::env::var("DEP_LITERT_LIB_DIR") {
