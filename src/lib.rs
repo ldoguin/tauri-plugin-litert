@@ -38,6 +38,20 @@ impl<R: Runtime, T: Manager<R>> LiteRtExt<R> for T {
     }
 }
 
+pub trait LiteRtTtsExt<R: Runtime> {
+    fn tts_speak(&self, text: String, rate: f32, pitch: f32) -> crate::error::Result<()>;
+    fn tts_cancel(&self) -> crate::error::Result<()>;
+}
+
+impl<R: Runtime, T: Manager<R>> LiteRtTtsExt<R> for T {
+    fn tts_speak(&self, text: String, rate: f32, pitch: f32) -> crate::error::Result<()> {
+        self.litert().tts_speak(text, rate, pitch)
+    }
+    fn tts_cancel(&self) -> crate::error::Result<()> {
+        self.litert().tts_cancel()
+    }
+}
+
 #[cfg(desktop)]
 pub use desktop::LiteRt;
 #[cfg(mobile)]
@@ -76,6 +90,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_model_info,
             commands::run_inference,
             commands::create_embedding,
+            // Native TTS
+            commands::tts_speak,
+            commands::tts_cancel,
             // LLM generation
             lm_commands::load_lm_model,
             lm_commands::unload_lm_model,

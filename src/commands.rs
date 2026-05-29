@@ -44,3 +44,18 @@ pub fn run_inference<R: Runtime>(app: AppHandle<R>, input: InferenceInput) -> Re
 pub fn create_embedding<R: Runtime>(app: AppHandle<R>, input: EmbeddingInput) -> Result<EmbeddingOutput> {
     app.litert().create_embedding(input)
 }
+
+#[command]
+pub fn tts_speak<R: Runtime>(
+    app: AppHandle<R>,
+    text: String,
+    #[allow(unused_variables)] rate: Option<f32>,
+    #[allow(unused_variables)] pitch: Option<f32>,
+) -> Result<()> {
+    app.litert().tts_speak(text, rate.unwrap_or(1.0), pitch.unwrap_or(1.0))
+}
+
+#[command]
+pub fn tts_cancel<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.litert().tts_cancel()
+}

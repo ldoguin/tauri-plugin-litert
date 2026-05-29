@@ -1,6 +1,7 @@
 package com.plugin.litert
 
 import android.app.Activity
+import android.speech.tts.TextToSpeech
 import android.util.Base64
 import android.util.Log
 import app.tauri.annotation.Command
@@ -77,6 +78,13 @@ class LmModelIdArgs {
 }
 
 @InvokeArg
+class TtsSpeakArgs {
+    lateinit var text: String
+    var rate: Float = 1.0f
+    var pitch: Float = 1.0f
+}
+
+@InvokeArg
 class SamplerArgs {
     var temperature: Float = 0.8f
     var topP: Float = 0.95f
@@ -131,6 +139,55 @@ class LiteRtPlugin(private val activity: Activity) : Plugin(activity) {
     private val models   = ConcurrentHashMap<String, LoadedModel>()
     private val lmModels = ConcurrentHashMap<String, LoadedLmModel>()
     private val scope    = CoroutineScope(Dispatchers.IO)
+
+    // ── Android TextToSpeech ────────────────────────────────────────────────
+
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+
+    private fun ensureTts(onReady: () -> Unit) {
+        // TextToSpeech must be constructed on the main thread on some devices.
+        activity.runOnUiThread {
+            if (ttsReady && tts != null) { onReady(); return@runOnUiThread }
+            tts?.shutdown()
+            tts = TextToSpeech(activity) { status ->
+                ttsReady = (status == TextToSpeech.SUCCESS)
+                if (ttsReady) {
+                    activity.runOnUiThread { onReady() }
+                } else {
+                    Log.e("LiteRtPlugin", "TextToSpeech init failed with status=$status")
+                }
+            }
+        }
+    }
+
+    @Command
+    fun ttsSpeak(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(TtsSpeakArgs::class.java)
+            Log.d("LiteRtPlugin", "ttsSpeak: text length=${args.text.length}")
+            ensureTts {
+                tts?.setSpeechRate(args.rate)
+                tts?.setPitch(args.pitch)
+                val result = tts?.speak(args.text, TextToSpeech.QUEUE_FLUSH, null, "tts_utt")
+                Log.d("LiteRtPlugin", "tts.speak result=$result")
+            }
+            invoke.resolve()
+        } catch (e: Exception) {
+            Log.e("LiteRtPlugin", "ttsSpeak error: ${e.message}", e)
+            invoke.reject(e.message ?: "ttsSpeak failed")
+        }
+    }
+
+    @Command
+    fun ttsCancel(invoke: Invoke) {
+        try {
+            tts?.stop()
+            invoke.resolve()
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "ttsCancel failed")
+        }
+    }
 
     // ── loadModel ──────────────────────────────────────────────────────────
 

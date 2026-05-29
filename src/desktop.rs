@@ -254,6 +254,17 @@ impl<R: Runtime> LiteRt<R> {
     }
 
     // -----------------------------------------------------------------------
+    // tts (desktop: no-op — browser speechSynthesis handles it on desktop)
+    // -----------------------------------------------------------------------
+    pub fn tts_speak(&self, _text: String, _rate: f32, _pitch: f32) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn tts_cancel(&self) -> Result<()> {
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
     // create_embedding
     // -----------------------------------------------------------------------
     pub fn create_embedding(&self, input: EmbeddingInput) -> Result<EmbeddingOutput> {

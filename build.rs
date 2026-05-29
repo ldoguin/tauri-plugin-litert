@@ -12,6 +12,9 @@ const COMMANDS: &[&str] = &[
     "list_lm_models",
     "generate",
     "generate_stream",
+    // Native TTS
+    "tts_speak",
+    "tts_cancel",
 ];
 
 fn main() {

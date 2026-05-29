@@ -14,4 +14,6 @@ permissions = [
   "allow-list-lm-models",
   "allow-generate",
   "allow-generate-stream",
+  "allow-tts-speak",
+  "allow-tts-cancel",
 ]

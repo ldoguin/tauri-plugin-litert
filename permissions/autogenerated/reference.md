@@ -15,6 +15,8 @@ Default permissions for tauri-plugin-litert. Allows model management and inferen
 - `allow-list-lm-models`
 - `allow-generate`
 - `allow-generate-stream`
+- `allow-tts-speak`
+- `allow-tts-cancel`
 
 ## Permission Table
 
@@ -255,6 +257,58 @@ Enables the run_inference command without any pre-configured scope.
 <td>
 
 Denies the run_inference command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`litert:allow-tts-cancel`
+
+</td>
+<td>
+
+Enables the tts_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`litert:deny-tts-cancel`
+
+</td>
+<td>
+
+Denies the tts_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`litert:allow-tts-speak`
+
+</td>
+<td>
+
+Enables the tts_speak command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`litert:deny-tts-speak`
+
+</td>
+<td>
+
+Denies the tts_speak command without any pre-configured scope.
 
 </td>
 </tr>

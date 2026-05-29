@@ -403,6 +403,30 @@
           "markdownDescription": "Denies the run_inference command without any pre-configured scope."
         },
         {
+          "description": "Enables the tts_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-tts-cancel",
+          "markdownDescription": "Enables the tts_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tts_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-tts-cancel",
+          "markdownDescription": "Denies the tts_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the tts_speak command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-tts-speak",
+          "markdownDescription": "Enables the tts_speak command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tts_speak command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-tts-speak",
+          "markdownDescription": "Denies the tts_speak command without any pre-configured scope."
+        },
+        {
           "description": "Enables the unload_lm_model command without any pre-configured scope.",
           "type": "string",
           "const": "allow-unload-lm-model",
@@ -427,10 +451,10 @@
           "markdownDescription": "Denies the unload_model command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for tauri-plugin-litert. Allows model management and inference.\n#### This default permission set includes:\n\n- `allow-load-model`\n- `allow-unload-model`\n- `allow-list-models`\n- `allow-get-model-info`\n- `allow-run-inference`\n- `allow-create-embedding`\n- `allow-load-lm-model`\n- `allow-unload-lm-model`\n- `allow-list-lm-models`\n- `allow-generate`\n- `allow-generate-stream`",
+          "description": "Default permissions for tauri-plugin-litert. Allows model management and inference.\n#### This default permission set includes:\n\n- `allow-load-model`\n- `allow-unload-model`\n- `allow-list-models`\n- `allow-get-model-info`\n- `allow-run-inference`\n- `allow-create-embedding`\n- `allow-load-lm-model`\n- `allow-unload-lm-model`\n- `allow-list-lm-models`\n- `allow-generate`\n- `allow-generate-stream`\n- `allow-tts-speak`\n- `allow-tts-cancel`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for tauri-plugin-litert. Allows model management and inference.\n#### This default permission set includes:\n\n- `allow-load-model`\n- `allow-unload-model`\n- `allow-list-models`\n- `allow-get-model-info`\n- `allow-run-inference`\n- `allow-create-embedding`\n- `allow-load-lm-model`\n- `allow-unload-lm-model`\n- `allow-list-lm-models`\n- `allow-generate`\n- `allow-generate-stream`"
+          "markdownDescription": "Default permissions for tauri-plugin-litert. Allows model management and inference.\n#### This default permission set includes:\n\n- `allow-load-model`\n- `allow-unload-model`\n- `allow-list-models`\n- `allow-get-model-info`\n- `allow-run-inference`\n- `allow-create-embedding`\n- `allow-load-lm-model`\n- `allow-unload-lm-model`\n- `allow-list-lm-models`\n- `allow-generate`\n- `allow-generate-stream`\n- `allow-tts-speak`\n- `allow-tts-cancel`"
         }
       ]
     }
