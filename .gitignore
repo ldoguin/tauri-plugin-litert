@@ -3,3 +3,7 @@ node_modules
 Cargo.lock
 .direnv
 .jj
+# Tauri / Android build artifacts
+/.tauri
+android/.tauri/
+android/build/
