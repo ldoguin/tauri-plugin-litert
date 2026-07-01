@@ -13,6 +13,7 @@ import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
+import com.google.ai.edge.litert.NpuCompatibilityChecker
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.ConversationConfig
@@ -75,6 +76,11 @@ class LoadLmModelArgs {
 @InvokeArg
 class LmModelIdArgs {
     lateinit var modelId: String
+}
+
+@InvokeArg
+class ExtractBundledModelsArgs {
+    lateinit var targetDir: String
 }
 
 @InvokeArg
@@ -189,6 +195,87 @@ class LiteRtPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    // ── queryAcceleratorSupport ───────────────────────────────────────────
+    // Uses the litert SDK's built-in NpuCompatibilityChecker (which checks
+    // Build.SOC_MANUFACTURER / Build.SOC_MODEL against its embedded SoC lists)
+    // to determine the best available accelerator at runtime — no hardcoded
+    // device lists needed in application code.
+    //
+    // Returns: { accelerator: "npu"|"gpu"|"cpu", vendor: string|null }
+    //   "npu"  — supported Qualcomm Hexagon, MediaTek APU, or Google Tensor NPU
+    //   "gpu"  — NPU not supported but GPU is assumed available (all modern phones)
+    //   "cpu"  — explicit CPU-only request (never returned by auto-detect)
+
+    @Command
+    fun queryAcceleratorSupport(invoke: Invoke) {
+        try {
+            val (accelerator, vendor) = when {
+                NpuCompatibilityChecker.Companion.Qualcomm.isDeviceSupported()     -> "npu" to "Qualcomm"
+                NpuCompatibilityChecker.Companion.Mediatek.isDeviceSupported()     -> "npu" to "MediaTek"
+                NpuCompatibilityChecker.Companion.GoogleTensor.isDeviceSupported() -> "npu" to "GoogleTensor"
+                else                                                                -> "gpu" to null
+            }
+            val result = JSObject()
+            result.put("accelerator", accelerator)
+            if (vendor != null) result.put("vendor", vendor)
+            Log.d("LiteRtPlugin", "queryAcceleratorSupport: accelerator=$accelerator vendor=$vendor")
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            Log.e("LiteRtPlugin", "queryAcceleratorSupport error: ${e.message}", e)
+            // Fall back to GPU on any error (safer than NPU for an unknown device)
+            val result = JSObject()
+            result.put("accelerator", "gpu")
+            invoke.resolve(result)
+        }
+    }
+
+    // ── extractBundledModels ──────────────────────────────────────────────
+    // Copies APK assets under assets/bundled-models/ (small task models that
+    // can't be auto-downloaded — gated/dead upstream URLs) into targetDir,
+    // skipping files that already exist there. Called once at app startup;
+    // idempotent so repeat calls after the first launch are cheap no-ops.
+    // Runs on Dispatchers.IO — the bundled set can be hundreds of MB, and
+    // Rust's run_mobile_plugin call blocks on whichever thread resolves this,
+    // so doing the copy on IO instead of the invoking thread avoids an ANR
+    // if that thread turns out to be the main/UI thread.
+
+    @Command
+    fun extractBundledModels(invoke: Invoke) {
+        val args = invoke.parseArgs(ExtractBundledModelsArgs::class.java)
+        scope.launch {
+            try {
+                val assetDir = "bundled-models"
+                val names = try {
+                    activity.assets.list(assetDir) ?: emptyArray()
+                } catch (e: Exception) {
+                    Log.d("LiteRtPlugin", "extractBundledModels: no $assetDir/ in APK assets")
+                    emptyArray()
+                }
+
+                val targetDir = java.io.File(args.targetDir)
+                targetDir.mkdirs()
+
+                var copied = 0
+                for (name in names) {
+                    val dest = java.io.File(targetDir, name)
+                    if (dest.exists()) continue
+                    activity.assets.open("$assetDir/$name").use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    copied++
+                    Log.d("LiteRtPlugin", "extractBundledModels: extracted $name -> ${dest.absolutePath}")
+                }
+
+                val result = JSObject()
+                result.put("copied", copied)
+                invoke.resolve(result)
+            } catch (e: Exception) {
+                Log.e("LiteRtPlugin", "extractBundledModels error: ${e.message}", e)
+                invoke.reject(e.message ?: "extractBundledModels failed")
+            }
+        }
+    }
+
     // ── loadModel ──────────────────────────────────────────────────────────
 
     @Command
@@ -297,10 +384,14 @@ class LiteRtPlugin(private val activity: Activity) : Plugin(activity) {
                 val outputBuffers = loaded.compiledModel.createOutputBuffers(0)
                 args.inputs.forEachIndexed { i, data ->
                     val type = args.inputTypes?.getOrNull(i) ?: "float"
-                    if (type == "int32") {
-                        inputBuffers[i].writeInt(data.map { it.toInt() }.toIntArray())
-                    } else {
-                        inputBuffers[i].writeFloat(data)
+                    when (type) {
+                        "int32" -> inputBuffers[i].writeInt(data.map { it.toInt() }.toIntArray())
+                        // Quantized uint8 input tensors (e.g. MoveNet Lightning) expect raw
+                        // 0-255 byte values. JVM Byte is signed (-128..127); toByte() truncates
+                        // to the low 8 bits, which is the correct bit pattern for unsigned byte
+                        // data — the native side reads the bytes raw, not as a signed value.
+                        "int8", "uint8" -> inputBuffers[i].writeInt8(data.map { it.toInt().toByte() }.toByteArray())
+                        else -> inputBuffers[i].writeFloat(data)
                     }
                 }
 
@@ -362,6 +453,13 @@ class LiteRtPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     // ── loadLmModel ────────────────────────────────────────────────────────
+    // Attempts backends in priority order and falls back automatically:
+    //   npu  → [NPU, GPU, CPU]
+    //   gpu  → [GPU, CPU]
+    //   cpu  → [CPU]
+    // Vision (multimodal) requires GPU; it is silently dropped when falling
+    // back to CPU so the user still gets text-only inference rather than an
+    // error. The actually-used accelerator is reported back in the response.
 
     @Command
     fun loadLmModel(invoke: Invoke) {
@@ -372,45 +470,66 @@ class LiteRtPlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
 
+        data class Attempt(val backend: Backend, val name: String, val vision: Boolean)
+
+        val attempts: List<Attempt> = when (args.accelerator.lowercase()) {
+            "npu" -> listOf(
+                Attempt(Backend.NPU(activity.applicationInfo.nativeLibraryDir), "npu", args.vision),
+                Attempt(Backend.GPU(),                                           "gpu", args.vision),
+                Attempt(Backend.CPU(),                                           "cpu", false),
+            )
+            "gpu" -> listOf(
+                Attempt(Backend.GPU(), "gpu", args.vision),
+                Attempt(Backend.CPU(), "cpu", false),
+            )
+            else -> listOf(
+                Attempt(Backend.CPU(), "cpu", false),
+            )
+        }
+
         scope.launch {
-            try {
-                val backend = when (args.accelerator.lowercase()) {
-                    "gpu" -> Backend.GPU()
-                    "npu" -> Backend.NPU(
-                        nativeLibraryDir = activity.applicationInfo.nativeLibraryDir
+            var lastError = "no backends attempted"
+            for ((idx, attempt) in attempts.withIndex()) {
+                try {
+                    val config = if (attempt.vision) {
+                        EngineConfig(
+                            modelPath     = args.modelPath,
+                            backend       = attempt.backend,
+                            cacheDir      = args.cacheDir ?: activity.cacheDir.path,
+                            visionBackend = Backend.GPU(),
+                        )
+                    } else {
+                        EngineConfig(
+                            modelPath = args.modelPath,
+                            backend   = attempt.backend,
+                            cacheDir  = args.cacheDir ?: activity.cacheDir.path,
+                        )
+                    }
+
+                    val engine = Engine(config)
+                    engine.initialize()
+
+                    if (idx > 0) {
+                        Log.w("LiteRtPlugin",
+                            "loadLmModel: ${args.accelerator} unavailable, using ${attempt.name}" +
+                            if (!attempt.vision && args.vision) " (vision disabled)" else "")
+                    }
+
+                    val loaded = LoadedLmModel(
+                        modelId     = args.modelId,
+                        modelPath   = args.modelPath,
+                        accelerator = attempt.name,   // actual accelerator, not the requested one
+                        engine      = engine,
                     )
-                    else  -> Backend.CPU()
+                    lmModels[args.modelId] = loaded
+                    invoke.resolve(loaded.toJSObject())
+                    return@launch
+                } catch (e: Exception) {
+                    lastError = e.message ?: "unknown error"
+                    Log.w("LiteRtPlugin", "loadLmModel: ${attempt.name} failed — $lastError")
                 }
-
-                val config = if (args.vision) {
-                    EngineConfig(
-                        modelPath     = args.modelPath,
-                        backend       = backend,
-                        cacheDir      = args.cacheDir ?: activity.cacheDir.path,
-                        visionBackend = Backend.GPU(),
-                    )
-                } else {
-                    EngineConfig(
-                        modelPath = args.modelPath,
-                        backend   = backend,
-                        cacheDir  = args.cacheDir ?: activity.cacheDir.path,
-                    )
-                }
-
-                val engine = Engine(config)
-                engine.initialize()
-
-                val loaded = LoadedLmModel(
-                    modelId     = args.modelId,
-                    modelPath   = args.modelPath,
-                    accelerator = args.accelerator,
-                    engine      = engine,
-                )
-                lmModels[args.modelId] = loaded
-                invoke.resolve(loaded.toJSObject())
-            } catch (e: Exception) {
-                invoke.reject("load_lm_model failed: ${e.message}")
             }
+            invoke.reject("load_lm_model failed on all backends: $lastError")
         }
     }
 

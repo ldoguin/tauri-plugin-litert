@@ -36,8 +36,11 @@ export interface InferenceInput {
   modelId: string;
   /** One flat Float32 array per input tensor, in order. */
   inputs: number[][];
-  /** Optional element type per tensor. "int32" triggers writeInt on Android. Defaults to "float". */
-  inputTypes?: ("float" | "int32")[];
+  /**
+   * Optional element type per tensor. "int32" triggers writeInt, "int8"/"uint8"
+   * trigger writeInt8 (raw 0-255 byte values) on Android. Defaults to "float".
+   */
+  inputTypes?: ("float" | "int32" | "int8" | "uint8")[];
 }
 
 export interface InferenceOutput {

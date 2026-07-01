@@ -24,6 +24,15 @@ mod mobile_lm;
 
 pub use error::{Error, Result};
 
+/// Accelerator support query result — returned by `query_accelerator_support`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AcceleratorSupport {
+    /// "npu", "gpu", or "cpu"
+    pub accelerator: String,
+    /// NPU vendor name when accelerator == "npu" ("Qualcomm", "MediaTek", "GoogleTensor")
+    pub vendor: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // LiteRT (inference / embedding) extension trait
 // ---------------------------------------------------------------------------
@@ -90,6 +99,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_model_info,
             commands::run_inference,
             commands::create_embedding,
+            // Device capability detection
+            commands::query_accelerator_support,
             // Native TTS
             commands::tts_speak,
             commands::tts_cancel,

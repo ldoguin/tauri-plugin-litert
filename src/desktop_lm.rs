@@ -33,6 +33,10 @@ pub struct LiteRtLm<R: Runtime> {
     #[allow(dead_code)]
     app: AppHandle<R>,
     models: Mutex<HashMap<String, LoadedLmModel>>,
+    /// Serialises all conversation create/stream cycles.
+    /// LiteRT-LM only supports one active Conversation per Engine; concurrent
+    /// create_conversation calls return null and surface as SessionCreationFailed.
+    conv_lock: Arc<Mutex<()>>,
 }
 
 impl<R: Runtime> LiteRtLm<R> {
@@ -40,6 +44,7 @@ impl<R: Runtime> LiteRtLm<R> {
         Self {
             app,
             models: Mutex::new(HashMap::new()),
+            conv_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -57,11 +62,21 @@ impl<R: Runtime> LiteRtLm<R> {
         }
 
         let backend = accel_to_backend(&opts.accelerator);
+        // Leave audio_backend as None — auto-detects from model metadata.
+        // Text-only models (Gemma, etc.) have no audio section in their bundle;
+        // forcing any audio backend causes the C runtime to try to load an
+        // audio TFLite model that does not exist → null → SessionCreationFailed
+        // at model_resources_litert_lm.cc:70.
         let mut settings = EngineSettings::new(&opts.model_path).backend(backend);
         if let Some(n) = opts.max_tokens {
             settings = settings.max_num_tokens(n);
         }
         if let Some(ref dir) = opts.cache_dir {
+            // Ensure the directory exists — LiteRT needs it writable so it can
+            // create the weight/shader cache on the first run.
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                return Err(Error::Backend(format!("create cache dir {dir:?}: {e}")));
+            }
             settings = settings.cache_dir(dir);
         }
 
@@ -109,17 +124,24 @@ impl<R: Runtime> LiteRtLm<R> {
     // lock is not held for the entire generation.
     // -----------------------------------------------------------------------
     pub fn generate(&self, input: GenerateInput) -> Result<GenerateOutput> {
-        let (engine, params, prompt) = {
+        let (engine, params, prompt, system) = {
             let models = self.models.lock().unwrap();
             let loaded = models
                 .get(&input.model_id)
                 .ok_or_else(|| Error::ModelNotFound(input.model_id.clone()))?;
-            (Arc::clone(&loaded.engine), sampler_params(&input.sampler), build_prompt(&input))
+            (Arc::clone(&loaded.engine), sampler_params(&input.sampler), input.prompt.clone(), input.system_instruction.clone())
         }; // mutex released here
 
-        let mut conv = engine
-            .create_conversation(params)
-            .map_err(|e| Error::Backend(format!("create_conversation: {e}")))?;
+        let _conv_guard = self.conv_lock.lock().unwrap();
+
+        let mut conv = match &system {
+            Some(s) => engine
+                .create_conversation_with_system(params, s)
+                .map_err(|e| Error::Backend(format!("create_conversation: {e}")))?,
+            None => engine
+                .create_conversation(params)
+                .map_err(|e| Error::Backend(format!("create_conversation: {e}")))?,
+        };
 
         let t0 = Instant::now();
         let text = conv
@@ -142,21 +164,31 @@ impl<R: Runtime> LiteRtLm<R> {
     // (whether generation succeeded or failed).
     // -----------------------------------------------------------------------
     pub fn generate_stream(&self, input: GenerateInput) -> Result<()> {
-        let (engine, params, prompt) = {
+        let (engine, params, prompt, system) = {
             let models = self.models.lock().unwrap();
             let loaded = models
                 .get(&input.model_id)
                 .ok_or_else(|| Error::ModelNotFound(input.model_id.clone()))?;
-            (Arc::clone(&loaded.engine), sampler_params(&input.sampler), build_prompt(&input))
+            (Arc::clone(&loaded.engine), sampler_params(&input.sampler), input.prompt.clone(), input.system_instruction.clone())
         }; // mutex released here
 
         let model_id = input.model_id.clone();
         let app = self.app.clone();
+        let conv_lock = Arc::clone(&self.conv_lock);
 
         std::thread::spawn(move || {
-            let conv_result = engine
-                .create_conversation(params)
-                .map_err(|e| Error::Backend(format!("create_conversation: {e}")));
+            // Hold the lock for the entire conversation lifetime so that a second
+            // generate_stream call waits rather than racing create_conversation.
+            let _conv_guard = conv_lock.lock().unwrap();
+
+            let conv_result = match &system {
+                Some(s) => engine
+                    .create_conversation_with_system(params, s)
+                    .map_err(|e| Error::Backend(format!("create_conversation: {e}"))),
+                None => engine
+                    .create_conversation(params)
+                    .map_err(|e| Error::Backend(format!("create_conversation: {e}"))),
+            };
 
             let mut conv: Conversation = match conv_result {
                 Ok(c) => c,
@@ -222,15 +254,16 @@ fn accel_to_backend(a: &Accelerator) -> Backend {
 }
 
 fn sampler_params(opts: &SamplerOptions) -> SamplerParams {
-    SamplerParams::default()
+    // Call top_k first, top_p last — each setter overwrites the sampler type,
+    // so the last call wins. TopP is CPU-compatible; TopK requires the WebGPU
+    // sampler delegate which is unavailable on many desktop GPUs.
+    let mut p = SamplerParams::default()
         .temperature(opts.temperature)
-        .top_p(opts.top_p)
         .top_k(opts.top_k)
+        .top_p(opts.top_p);
+    if let Some(n) = opts.max_output_tokens {
+        p = p.max_output_tokens(n);
+    }
+    p
 }
 
-fn build_prompt(input: &GenerateInput) -> String {
-    match &input.system_instruction {
-        Some(sys) => format!("[System: {}]\n\n{}", sys, input.prompt),
-        None => input.prompt.clone(),
-    }
-}

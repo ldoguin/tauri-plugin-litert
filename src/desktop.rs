@@ -39,6 +39,11 @@ pub struct LiteRt<R: Runtime> {
     #[allow(dead_code)]
     app: AppHandle<R>,
     models: Mutex<HashMap<String, LoadedModel>>,
+    /// Holds the LiteRT runtime alive for the lifetime of the plugin.
+    /// Without this, dropping the last per-model Environment tears down the
+    /// LiteRT C runtime, which breaks the LLM engine's audio compiled-model
+    /// executor when it tries to create a TFLite session inside create_conversation.
+    _runtime_keepalive: Environment,
 }
 
 impl<R: Runtime> LiteRt<R> {
@@ -46,7 +51,17 @@ impl<R: Runtime> LiteRt<R> {
         Self {
             app,
             models: Mutex::new(HashMap::new()),
+            _runtime_keepalive: Environment::new()
+                .expect("LiteRT Environment::new failed during plugin init"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // query_accelerator_support
+    // -----------------------------------------------------------------------
+    pub fn query_accelerator_support(&self) -> Result<crate::AcceleratorSupport> {
+        // NPU delegation is Android-only; desktop always uses GPU for LLMs.
+        Ok(crate::AcceleratorSupport { accelerator: "gpu".into(), vendor: None })
     }
 
     // -----------------------------------------------------------------------
@@ -205,7 +220,21 @@ impl<R: Runtime> LiteRt<R> {
             .zip(loaded.input_element_types.iter())
             .zip(input.inputs.iter())
             .map(|((dims, &elem_type), data)| {
-                let shape = TensorShape { element_type: elem_type, dims: dims.clone() };
+                // TFLite models with dynamic batch store -1 in dims[0].
+                // TensorShape::num_elements() clamps negatives to 0 via max(0),
+                // so the expected count comes out as 0 → "expects 0 elements".
+                // Infer a concrete batch size from the actual data length.
+                let mut concrete = dims.clone();
+                if concrete.first().map(|&d| d < 1).unwrap_or(false) {
+                    let non_batch: usize = concrete[1..]
+                        .iter()
+                        .map(|&d| d.max(1) as usize)
+                        .product();
+                    if non_batch > 0 {
+                        concrete[0] = (data.len() / non_batch) as i32;
+                    }
+                }
+                let shape = TensorShape { element_type: elem_type, dims: concrete };
                 let expected = shape.num_elements();
                 if data.len() != expected {
                     return Err(Error::InvalidInput(format!(
@@ -221,12 +250,24 @@ impl<R: Runtime> LiteRt<R> {
             .collect::<Result<_>>()?;
 
         // Allocate output buffers using the actual element type.
+        // Mirror the same dynamic-dim fix: if batch is -1, propagate the
+        // concrete batch size from the first input.
+        let inferred_batch = input_buffers
+            .first()
+            .and_then(|b| b.shape().ok())
+            .and_then(|s| s.dims.first().copied())
+            .unwrap_or(1)
+            .max(1);
         let mut output_buffers: Vec<TensorBuffer> = info
             .output_shapes
             .iter()
             .zip(loaded.output_element_types.iter())
             .map(|(dims, &elem_type)| {
-                let shape = TensorShape { element_type: elem_type, dims: dims.clone() };
+                let mut concrete = dims.clone();
+                if concrete.first().map(|&d| d < 1).unwrap_or(false) {
+                    concrete[0] = inferred_batch;
+                }
+                let shape = TensorShape { element_type: elem_type, dims: concrete };
                 TensorBuffer::managed_host(&loaded.buf_env, &shape)
                     .map_err(|e| Error::Backend(e.to_string()))
             })
@@ -245,6 +286,16 @@ impl<R: Runtime> LiteRt<R> {
             .zip(loaded.output_element_types.iter())
             .map(|(buf, &elem_type)| read_buf_as_f32(buf, elem_type))
             .collect::<Result<_>>()?;
+
+        // Debug: log first output to diagnose NaN (remove once stable).
+        if let Some(first) = outputs.first() {
+            let nan_count = first.iter().filter(|v| v.is_nan()).count();
+            let sum: f32 = first.iter().filter(|v| v.is_finite()).sum();
+            eprintln!("[litert] run_inference: {} outputs, first has {} elements, {nan_count} NaN, finite_sum={sum:.4}", outputs.len(), first.len());
+            if !first.is_empty() {
+                eprintln!("[litert] first[0..4]: {:?}", &first[..first.len().min(4)]);
+            }
+        }
 
         Ok(InferenceOutput {
             model_id: input.model_id,
