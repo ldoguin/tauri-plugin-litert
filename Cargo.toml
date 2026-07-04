@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "vendor/litert", "vendor/litertlm"]
+
 [package]
 name = "tauri-plugin-litert"
 version = "0.1.0"
@@ -28,8 +31,8 @@ log = "0.4"
 # Desktop: LiteRT 2.x Rust bindings (downloads prebuilt libLiteRt automatically).
 # Excluded from Android (handled by Kotlin) and iOS (no upstream prebuilt yet).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-litert   = { version = "0.2", optional = true }
-litertlm = { version = "0.2", optional = true }
+litert   = { path = "vendor/litert", optional = true }
+litertlm = { path = "vendor/litertlm", optional = true }
 
 [features]
 default = ["desktop"]

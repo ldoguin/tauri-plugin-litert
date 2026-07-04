@@ -59,3 +59,11 @@ pub fn tts_speak<R: Runtime>(
 pub fn tts_cancel<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     app.litert().tts_cancel()
 }
+
+/// On Android: uses NpuCompatibilityChecker to determine the best available
+/// accelerator (npu > gpu) at runtime, based on the SDK's embedded SoC lists.
+/// On desktop: always returns "gpu" (the standard desktop LLM accelerator).
+#[command]
+pub fn query_accelerator_support<R: Runtime>(app: AppHandle<R>) -> Result<crate::AcceleratorSupport> {
+    app.litert().query_accelerator_support()
+}

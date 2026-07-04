@@ -3,3 +3,16 @@ node_modules
 Cargo.lock
 .direnv
 .jj
+
+# Cargo build artifacts inside vendored crates
+vendor/**/target/
+
+# Android build artifacts
+android/.tauri/
+android/build/
+android/.gradle/
+android/local.properties
+android/.cxx/
+android/.externalNativeBuild/
+android/captures/
+android/**/*.iml

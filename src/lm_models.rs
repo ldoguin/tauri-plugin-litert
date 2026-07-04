@@ -55,6 +55,8 @@ pub struct SamplerOptions {
     pub top_p: f32,
     #[serde(default = "default_top_k")]
     pub top_k: i32,
+    /// Maximum tokens to generate per response. `None` = library default.
+    pub max_output_tokens: Option<i32>,
 }
 
 impl Default for SamplerOptions {
@@ -63,6 +65,7 @@ impl Default for SamplerOptions {
             temperature: default_temperature(),
             top_p: default_top_p(),
             top_k: default_top_k(),
+            max_output_tokens: None,
         }
     }
 }
