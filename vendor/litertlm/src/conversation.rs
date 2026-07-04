@@ -188,8 +188,11 @@ impl Conversation {
             sys::litert_lm_conversation_send_message_stream(
                 self.ptr.as_ptr(),
                 msg_cstr.as_ptr(),
-                ctx_ptr,              // extra_context (e.g. RAG documents)
-                std::ptr::null_mut(), // optional_args (v0.13.1 new 4th param)
+                ctx_ptr,
+                // optional_args only exists in the Linux prebuilt headers (v0.13.1+).
+                // Windows, macOS, and Android ship the 5-param v0.10.x ABI.
+                #[cfg(target_os = "linux")]
+                std::ptr::null_mut(),
                 Some(trampoline),
                 &mut state as *mut State as *mut c_void,
             )
