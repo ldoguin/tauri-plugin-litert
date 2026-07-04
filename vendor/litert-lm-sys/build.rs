@@ -57,6 +57,11 @@ fn prebuilt_for(target: &str) -> Option<Prebuilt> {
             sha256: "616c71d3f52d7b6e7847cba2a3876890aeac993e27ec147dbf1c7de4fd786456",
             size: 28_862_192,
         },
+        // Google has not shipped a LiteRtLmC.dll for Windows as of v0.10.2.
+        // The crate compiles (bindings are identical to MSVC) but LLM inference
+        // will not be available at runtime. Set LITERT_LM_LIB_DIR to a directory
+        // containing LiteRtLmC.dll if you have a custom build.
+        "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu" => return None,
         _ => return None,
     })
 }

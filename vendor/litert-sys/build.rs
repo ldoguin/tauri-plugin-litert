@@ -168,7 +168,7 @@ fn target_spec(target: &str) -> Option<TargetSpec> {
             upstream_dir: "linux_arm64",
             files: LINUX_ARM64,
         },
-        "x86_64-pc-windows-msvc" => DistKind::LiteRtLmLfs {
+        "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu" => DistKind::LiteRtLmLfs {
             upstream_dir: "windows_x86_64",
             files: WINDOWS_X86_64,
         },
