@@ -24,7 +24,7 @@ mod windows_stubs {
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_session_config_create() -> *mut LiteRtLmSessionConfig {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
@@ -32,7 +32,7 @@ mod windows_stubs {
         _config: *mut LiteRtLmSessionConfig,
         _max_output_tokens: c_int,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -40,14 +40,14 @@ mod windows_stubs {
         _config: *mut LiteRtLmSessionConfig,
         _sampler_params: *const LiteRtLmSamplerParams,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_session_config_delete(
         _config: *mut LiteRtLmSessionConfig,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -59,19 +59,19 @@ mod windows_stubs {
         _messages_json: *const c_char,
         _enable_constrained_decoding: bool,
     ) -> *mut LiteRtLmConversationConfig {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_conversation_config_delete(
         _config: *mut LiteRtLmConversationConfig,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_set_min_log_level(_level: c_int) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -81,14 +81,14 @@ mod windows_stubs {
         _vision_backend_str: *const c_char,
         _audio_backend_str: *const c_char,
     ) -> *mut LiteRtLmEngineSettings {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_engine_settings_delete(
         _settings: *mut LiteRtLmEngineSettings,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -96,7 +96,7 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _max_num_tokens: c_int,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -104,7 +104,7 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _parallel_file_section_loading: bool,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -112,7 +112,7 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _cache_dir: *const c_char,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -120,7 +120,7 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _activation_data_type_int: c_int,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -128,14 +128,14 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _prefill_chunk_size: c_int,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_engine_settings_enable_benchmark(
         _settings: *mut LiteRtLmEngineSettings,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -143,7 +143,7 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _num_prefill_tokens: c_int,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -151,19 +151,19 @@ mod windows_stubs {
         _settings: *mut LiteRtLmEngineSettings,
         _num_decode_tokens: c_int,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_engine_create(
         _settings: *const LiteRtLmEngineSettings,
     ) -> *mut LiteRtLmEngine {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_engine_delete(_engine: *mut LiteRtLmEngine) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -171,12 +171,12 @@ mod windows_stubs {
         _engine: *mut LiteRtLmEngine,
         _config: *mut LiteRtLmSessionConfig,
     ) -> *mut LiteRtLmSession {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_session_delete(_session: *mut LiteRtLmSession) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -185,19 +185,19 @@ mod windows_stubs {
         _inputs: *const InputData,
         _num_inputs: usize,
     ) -> *mut LiteRtLmResponses {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_responses_delete(_responses: *mut LiteRtLmResponses) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_responses_get_num_candidates(
         _responses: *const LiteRtLmResponses,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
@@ -205,49 +205,49 @@ mod windows_stubs {
         _responses: *const LiteRtLmResponses,
         _index: c_int,
     ) -> *const c_char {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_session_get_benchmark_info(
         _session: *mut LiteRtLmSession,
     ) -> *mut LiteRtLmBenchmarkInfo {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_benchmark_info_delete(
         _benchmark_info: *mut LiteRtLmBenchmarkInfo,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_benchmark_info_get_time_to_first_token(
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
     ) -> f64 {
-        panic!("LiteRtLmC not available on Windows")
+        0.0
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_benchmark_info_get_total_init_time_in_second(
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
     ) -> f64 {
-        panic!("LiteRtLmC not available on Windows")
+        0.0
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_benchmark_info_get_num_prefill_turns(
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_benchmark_info_get_num_decode_turns(
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
@@ -255,7 +255,7 @@ mod windows_stubs {
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
         _index: c_int,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
@@ -263,7 +263,7 @@ mod windows_stubs {
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
         _index: c_int,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
@@ -271,7 +271,7 @@ mod windows_stubs {
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
         _index: c_int,
     ) -> f64 {
-        panic!("LiteRtLmC not available on Windows")
+        0.0
     }
 
     #[no_mangle]
@@ -279,7 +279,7 @@ mod windows_stubs {
         _benchmark_info: *const LiteRtLmBenchmarkInfo,
         _index: c_int,
     ) -> f64 {
-        panic!("LiteRtLmC not available on Windows")
+        0.0
     }
 
     #[no_mangle]
@@ -290,7 +290,7 @@ mod windows_stubs {
         _callback: LiteRtLmStreamCallback,
         _callback_data: *mut c_void,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
@@ -298,14 +298,14 @@ mod windows_stubs {
         _engine: *mut LiteRtLmEngine,
         _config: *mut LiteRtLmConversationConfig,
     ) -> *mut LiteRtLmConversation {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_conversation_delete(
         _conversation: *mut LiteRtLmConversation,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -314,21 +314,21 @@ mod windows_stubs {
         _message_json: *const c_char,
         _extra_context: *const c_char,
     ) -> *mut LiteRtLmJsonResponse {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_json_response_delete(
         _response: *mut LiteRtLmJsonResponse,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_json_response_get_string(
         _response: *const LiteRtLmJsonResponse,
     ) -> *const c_char {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 
     #[no_mangle]
@@ -339,20 +339,20 @@ mod windows_stubs {
         _callback: LiteRtLmStreamCallback,
         _callback_data: *mut c_void,
     ) -> c_int {
-        panic!("LiteRtLmC not available on Windows")
+        0
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_conversation_cancel_process(
         _conversation: *mut LiteRtLmConversation,
     ) {
-        panic!("LiteRtLmC not available on Windows")
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_conversation_get_benchmark_info(
         _conversation: *mut LiteRtLmConversation,
     ) -> *mut LiteRtLmBenchmarkInfo {
-        panic!("LiteRtLmC not available on Windows")
+        std::ptr::null_mut()
     }
 }
