@@ -423,6 +423,22 @@ fn hex(bytes: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
+    // No prebuilt available for this target — emit a stub import library so
+    // the linker is satisfied at build time. All stub functions panic at
+    // runtime; the plugin guards every LLM call behind a runtime check.
+    if lib_dir.is_none() && env::var_os("LITERT_LM_LIB_DIR").is_none() {
+        if target.contains("windows") {
+            let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+            emit_windows_stub(&out_dir);
+            println!("cargo:rustc-link-search=native={}", out_dir.display());
+        }
+        println!(
+            "cargo:warning=litert-lm-sys: no LiteRtLmC library for `{target}`, \
+             using stub. Set LITERT_LM_LIB_DIR to enable native LLM inference."
+        );
+        return;
+    }
+
     if let Some(dir) = lib_dir {
         let dir = dir.display();
         println!("cargo:rustc-link-search=native={dir}");
@@ -438,4 +454,90 @@ fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
     if target.contains("android") {
         println!("cargo:rustc-link-lib=dylib=log");
     }
+}
+
+/// Emit a static stub library `LiteRtLmC.lib` / `libLiteRtLmC.a` that
+/// satisfies the linker on Windows where no real DLL exists.
+/// Every exported symbol is a weak stub that panics if called at runtime.
+fn emit_windows_stub(out_dir: &Path) {
+    // Collect all LiteRtLm* symbols from the bindings file.
+    let bindings_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src").join("bindings");
+
+    // Use the MSVC bindings as the symbol source (same ABI as GNU on Windows).
+    let bindings_file = bindings_dir.join("x86_64-pc-windows-msvc.rs");
+    let symbols: Vec<String> = if bindings_file.exists() {
+        let src = fs::read_to_string(&bindings_file).unwrap_or_default();
+        src.lines()
+            .filter_map(|l| {
+                // Match: pub fn litert_lm_xxx(
+                let l = l.trim();
+                if l.starts_with("pub fn ") {
+                    let name = l.trim_start_matches("pub fn ")
+                        .split('(').next().unwrap_or("").trim().to_string();
+                    if !name.is_empty() { Some(name) } else { None }
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    if symbols.is_empty() {
+        // No symbols to stub — emit an empty archive so the link step succeeds.
+        let stub_c = out_dir.join("litert_lm_stub.c");
+        fs::write(&stub_c, "/* empty stub */\n").expect("write stub");
+    } else {
+        // Generate a C file with weak stub implementations for every symbol.
+        let mut src = String::from(
+            "#include <stdio.h>\n#include <stdlib.h>\n\n\
+             static void _litert_lm_stub_panic(const char* fn_name) {\n\
+             fprintf(stderr, \"litert-lm-sys: %s called but LiteRtLmC.dll is not available on Windows\\n\", fn_name);\n\
+             abort();\n}\n\n"
+        );
+        for sym in &symbols {
+            src.push_str(&format!(
+                "void {sym}(void) {{ _litert_lm_stub_panic(\"{sym}\"); }}\n"
+            ));
+        }
+        let stub_c = out_dir.join("litert_lm_stub.c");
+        fs::write(&stub_c, &src).expect("write stub C");
+    }
+
+    let stub_c = out_dir.join("litert_lm_stub.c");
+    let stub_o = out_dir.join("litert_lm_stub.o");
+    let stub_a = out_dir.join("libLiteRtLmC.a");
+
+    // Use the MinGW gcc that's already on PATH for the Windows GNU target.
+    let cc = env::var("CC_x86_64_pc_windows_gnu")
+        .or_else(|_| env::var("CC"))
+        .unwrap_or_else(|_| "x86_64-w64-mingw32-gcc".to_string());
+    let ar = env::var("AR_x86_64_pc_windows_gnu")
+        .or_else(|_| env::var("AR"))
+        .unwrap_or_else(|_| "x86_64-w64-mingw32-ar".to_string());
+
+    let cc_status = std::process::Command::new(&cc)
+        .args(["-O0", "-c", stub_c.to_str().unwrap(), "-o", stub_o.to_str().unwrap()])
+        .status();
+
+    match cc_status {
+        Ok(s) if s.success() => {
+            let ar_status = std::process::Command::new(&ar)
+                .args(["rcs", stub_a.to_str().unwrap(), stub_o.to_str().unwrap()])
+                .status();
+            if ar_status.map(|s| s.success()).unwrap_or(false) {
+                println!("cargo:rustc-link-lib=static=LiteRtLmC");
+                return;
+            }
+        }
+        _ => {}
+    }
+
+    // Fallback: emit an empty .a so the link search path is satisfied.
+    let _ = std::process::Command::new(&ar)
+        .args(["rcs", stub_a.to_str().unwrap()])
+        .status();
+    println!("cargo:rustc-link-lib=static=LiteRtLmC");
 }
