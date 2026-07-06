@@ -456,88 +456,68 @@ fn emit_link_directives(target: &str, lib_dir: Option<&Path>) {
     }
 }
 
-/// Emit a static stub library `LiteRtLmC.lib` / `libLiteRtLmC.a` that
-/// satisfies the linker on Windows where no real DLL exists.
-/// Every exported symbol is a weak stub that panics if called at runtime.
+/// Write a minimal valid `.a` archive (GNU ar format) containing one empty
+/// object file. This satisfies `-lLiteRtLmC` without requiring any compiler
+/// or assembler on PATH. The archive has no symbols so any actual call to a
+/// LiteRtLm* function will produce an "undefined reference" at link time —
+/// but the plugin never calls these functions on Windows (WASM fallback).
 fn emit_windows_stub(out_dir: &Path) {
-    // Collect all LiteRtLm* symbols from the bindings file.
-    let bindings_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src").join("bindings");
+    // GNU ar archive format:
+    //   "!<arch>\n"  — magic
+    //   per-entry header (60 bytes) + data (padded to even)
+    //
+    // We emit a single entry: the special "//" (string table) entry is
+    // optional for a single-member archive. We just emit one empty COFF
+    // object so the archive is valid.
+    //
+    // Minimal COFF object for x86-64 Windows (PE/COFF):
+    //   Machine:              0x8664 (IMAGE_FILE_MACHINE_AMD64)
+    //   NumberOfSections:     0
+    //   TimeDateStamp:        0
+    //   PointerToSymbolTable: 0
+    //   NumberOfSymbols:      0
+    //   SizeOfOptionalHeader: 0
+    //   Characteristics:      0
+    // Total: 20 bytes
+    let coff: [u8; 20] = [
+        0x64, 0x86,             // Machine: AMD64
+        0x00, 0x00,             // NumberOfSections: 0
+        0x00, 0x00, 0x00, 0x00, // TimeDateStamp
+        0x00, 0x00, 0x00, 0x00, // PointerToSymbolTable
+        0x00, 0x00, 0x00, 0x00, // NumberOfSymbols
+        0x00, 0x00,             // SizeOfOptionalHeader
+        0x00, 0x00,             // Characteristics
+    ];
 
-    // Use the MSVC bindings as the symbol source (same ABI as GNU on Windows).
-    let bindings_file = bindings_dir.join("x86_64-pc-windows-msvc.rs");
-    let symbols: Vec<String> = if bindings_file.exists() {
-        let src = fs::read_to_string(&bindings_file).unwrap_or_default();
-        src.lines()
-            .filter_map(|l| {
-                // Match: pub fn litert_lm_xxx(
-                let l = l.trim();
-                if l.starts_with("pub fn ") {
-                    let name = l.trim_start_matches("pub fn ")
-                        .split('(').next().unwrap_or("").trim().to_string();
-                    if !name.is_empty() { Some(name) } else { None }
-                } else {
-                    None
-                }
-            })
-            .collect()
-    } else {
-        vec![]
-    };
+    // GNU ar entry header (60 bytes):
+    //   Filename (16): "stub.o/         "
+    //   Timestamp (12): "0           "
+    //   UID (6):        "0     "
+    //   GID (6):        "0     "
+    //   Mode (8):       "0       "
+    //   Size (10):      "20        "  (size of COFF object)
+    //   End (2):        "`\n"
+    let size_str = format!("{:<10}", coff.len());
+    let mut header = [b' '; 60];
+    header[0..8].copy_from_slice(b"stub.o/ ");
+    header[16..28].copy_from_slice(b"0           ");
+    header[28..34].copy_from_slice(b"0     ");
+    header[34..40].copy_from_slice(b"0     ");
+    header[40..48].copy_from_slice(b"0       ");
+    header[48..58].copy_from_slice(size_str.as_bytes());
+    header[58] = b'`';
+    header[59] = b'\n';
 
-    if symbols.is_empty() {
-        // No symbols to stub — emit an empty archive so the link step succeeds.
-        let stub_c = out_dir.join("litert_lm_stub.c");
-        fs::write(&stub_c, "/* empty stub */\n").expect("write stub");
-    } else {
-        // Generate a C file with weak stub implementations for every symbol.
-        let mut src = String::from(
-            "#include <stdio.h>\n#include <stdlib.h>\n\n\
-             static void _litert_lm_stub_panic(const char* fn_name) {\n\
-             fprintf(stderr, \"litert-lm-sys: %s called but LiteRtLmC.dll is not available on Windows\\n\", fn_name);\n\
-             abort();\n}\n\n"
-        );
-        for sym in &symbols {
-            src.push_str(&format!(
-                "void {sym}(void) {{ _litert_lm_stub_panic(\"{sym}\"); }}\n"
-            ));
-        }
-        let stub_c = out_dir.join("litert_lm_stub.c");
-        fs::write(&stub_c, &src).expect("write stub C");
+    let mut archive: Vec<u8> = Vec::new();
+    archive.extend_from_slice(b"!<arch>\n");
+    archive.extend_from_slice(&header);
+    archive.extend_from_slice(&coff);
+    // Pad to even size
+    if coff.len() % 2 != 0 {
+        archive.push(b'\n');
     }
 
-    let stub_c = out_dir.join("litert_lm_stub.c");
-    let stub_o = out_dir.join("litert_lm_stub.o");
     let stub_a = out_dir.join("libLiteRtLmC.a");
-
-    // Use the MinGW gcc that's already on PATH for the Windows GNU target.
-    let cc = env::var("CC_x86_64_pc_windows_gnu")
-        .or_else(|_| env::var("CC"))
-        .unwrap_or_else(|_| "x86_64-w64-mingw32-gcc".to_string());
-    let ar = env::var("AR_x86_64_pc_windows_gnu")
-        .or_else(|_| env::var("AR"))
-        .unwrap_or_else(|_| "x86_64-w64-mingw32-ar".to_string());
-
-    let cc_status = std::process::Command::new(&cc)
-        .args(["-O0", "-c", stub_c.to_str().unwrap(), "-o", stub_o.to_str().unwrap()])
-        .status();
-
-    match cc_status {
-        Ok(s) if s.success() => {
-            let ar_status = std::process::Command::new(&ar)
-                .args(["rcs", stub_a.to_str().unwrap(), stub_o.to_str().unwrap()])
-                .status();
-            if ar_status.map(|s| s.success()).unwrap_or(false) {
-                println!("cargo:rustc-link-lib=static=LiteRtLmC");
-                return;
-            }
-        }
-        _ => {}
-    }
-
-    // Fallback: emit an empty .a so the link search path is satisfied.
-    let _ = std::process::Command::new(&ar)
-        .args(["rcs", stub_a.to_str().unwrap()])
-        .status();
+    fs::write(&stub_a, &archive).expect("write stub archive");
     println!("cargo:rustc-link-lib=static=LiteRtLmC");
 }
