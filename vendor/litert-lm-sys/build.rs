@@ -330,30 +330,26 @@ fn ensure_prebuilt(pb: &Prebuilt, cache_dir: &Path) {
     let dest = cache_dir.join(pb.local_name);
     let marker = cache_dir.join(format!("{}.verified", pb.local_name));
     if dest.exists() && marker.exists() {
-        // Self-healing: if the cached dylib has the wrong install name (e.g.
-        // from a previous build that used install_name_tool which failed
-        // silently), delete the marker so we re-download and re-patch.
+        // Self-healing: ensure the dylib-name symlink exists (it may be absent
+        // if this is an older cached build that predates the symlink logic, or
+        // if the cache was partially populated).
         if dest.extension().is_some_and(|e| e == "dylib") {
-            let expected_id = format!("@rpath/{}", pb.local_name);
             if let Ok(bytes) = fs::read(&dest) {
-                if !macho_has_install_name(&bytes, &expected_id) {
-                    println!(
-                        "cargo:warning=litert-lm-sys: {} has wrong install name; \
-                         re-downloading to fix (delete {} to force)",
-                        pb.local_name,
-                        cache_dir.display()
-                    );
-                    let _ = fs::remove_file(&marker);
-                    // Fall through to re-download.
-                } else {
-                    return;
+                let original_name = macho_install_name(&bytes).unwrap_or_default();
+                if !original_name.is_empty() {
+                    let link_name = original_name.rsplit('/').next().unwrap_or(&original_name);
+                    if link_name != pb.local_name {
+                        let symlink_path = cache_dir.join(link_name);
+                        if !symlink_path.exists() {
+                            let _ = fs::remove_file(&symlink_path);
+                            #[cfg(unix)]
+                            let _ = std::os::unix::fs::symlink(pb.local_name, &symlink_path);
+                        }
+                    }
                 }
-            } else {
-                return; // Can't read — let the write below overwrite it.
             }
-        } else {
-            return;
         }
+        return;
     }
 
     if env::var_os("LITERT_NO_DOWNLOAD").is_some() {
@@ -402,22 +398,32 @@ fn ensure_prebuilt(pb: &Prebuilt, cache_dir: &Path) {
         );
     }
 
-    // Patch the Mach-O LC_ID_DYLIB install name in the buffer before writing.
-    // The Python wheel dylib ships with install_name=@rpath/liblitert-lm.so
-    // (the original build artifact name). We need @rpath/libLiteRtLmC.dylib
-    // so dyld can find it at runtime via our -rpath emission.
-    //
-    // install_name_tool cannot grow a load command in-place when the new name
-    // is longer than the existing one, so we patch the bytes directly.
-    // If the new name fits in the existing cmdsize slot we overwrite in-place;
-    // otherwise we rebuild the load command section with an enlarged cmdsize.
-    let buf = if dest.extension().is_some_and(|e| e == "dylib") {
-        macho_set_install_name(buf, &format!("@rpath/{}", pb.local_name))
-    } else {
-        buf
-    };
-
     fs::write(&dest, &buf).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
+
+    // The Python wheel dylib ships with LC_ID_DYLIB = @rpath/liblitert-lm.so.
+    // dyld resolves that name at runtime via our -rpath, so we create a symlink
+    // liblitert-lm.so → libLiteRtLmC.dylib in the same cache directory.
+    // This is simpler and safer than patching the Mach-O binary (which risks
+    // corrupting the export trie if load command offsets shift).
+    if dest.extension().is_some_and(|e| e == "dylib") {
+        let original_name = macho_install_name(&buf).unwrap_or_default();
+        if !original_name.is_empty() {
+            // Extract just the filename from the install name (strip @rpath/).
+            let link_name = original_name
+                .rsplit('/')
+                .next()
+                .unwrap_or(&original_name);
+            if link_name != pb.local_name {
+                let symlink_path = cache_dir.join(link_name);
+                // Remove stale symlink if present, then recreate.
+                let _ = fs::remove_file(&symlink_path);
+                #[cfg(unix)]
+                {
+                    let _ = std::os::unix::fs::symlink(pb.local_name, &symlink_path);
+                }
+            }
+        }
+    }
 
     fs::write(&marker, pb.sha256).expect("write verified marker");
 }
@@ -447,130 +453,46 @@ fn hex(bytes: &[u8]) -> String {
     s
 }
 
-/// Returns true if the Mach-O dylib's `LC_ID_DYLIB` install name matches `expected`.
-fn macho_has_install_name(buf: &[u8], expected: &str) -> bool {
+/// Returns the `LC_ID_DYLIB` install name from a 64-bit LE Mach-O buffer,
+/// or `None` if the buffer is not a recognised Mach-O or has no `LC_ID_DYLIB`.
+fn macho_install_name(buf: &[u8]) -> Option<String> {
     const MH_MAGIC_64: u32 = 0xFEED_FACF;
     const LC_ID_DYLIB: u32 = 0x0D;
     const HEADER_SIZE: usize = 32;
 
     if buf.len() < HEADER_SIZE {
-        return false;
+        return None;
     }
-    let magic = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+    let magic = u32::from_le_bytes(buf[0..4].try_into().ok()?);
     if magic != MH_MAGIC_64 {
-        return true; // Not a 64-bit LE Mach-O — skip check.
+        return None;
     }
-    let ncmds = u32::from_le_bytes(buf[16..20].try_into().unwrap()) as usize;
+    let ncmds = u32::from_le_bytes(buf[16..20].try_into().ok()?) as usize;
     let mut off = HEADER_SIZE;
     for _ in 0..ncmds {
         if off + 8 > buf.len() {
             break;
         }
-        let cmd = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
-        let cmdsize = u32::from_le_bytes(buf[off + 4..off + 8].try_into().unwrap()) as usize;
+        let cmd = u32::from_le_bytes(buf[off..off + 4].try_into().ok()?);
+        let cmdsize = u32::from_le_bytes(buf[off + 4..off + 8].try_into().ok()?) as usize;
         if cmdsize == 0 {
             break;
         }
         if cmd == LC_ID_DYLIB && off + cmdsize <= buf.len() {
             let name_off =
-                u32::from_le_bytes(buf[off + 8..off + 12].try_into().unwrap()) as usize;
-            let name_bytes = &buf[off + name_off..off + cmdsize];
+                u32::from_le_bytes(buf[off + 8..off + 12].try_into().ok()?) as usize;
+            let name_bytes = buf.get(off + name_off..off + cmdsize)?;
             let name = name_bytes
                 .split(|&b| b == 0)
                 .next()
-                .and_then(|b| std::str::from_utf8(b).ok())
-                .unwrap_or("");
-            return name == expected;
+                .and_then(|b| std::str::from_utf8(b).ok())?;
+            return Some(name.to_owned());
         }
         off += cmdsize;
     }
-    false
+    None
 }
 
-/// Patch the `LC_ID_DYLIB` install name in a Mach-O dylib byte buffer.
-///
-/// The Python wheel dylib ships with `install_name = @rpath/liblitert-lm.so`.
-/// We need `@rpath/libLiteRtLmC.dylib` so `dyld` resolves it via our `-rpath`.
-///
-/// If the new name fits within the existing `cmdsize` slot it is written
-/// in-place (null-padded). If it doesn't fit, the load command is enlarged
-/// (cmdsize rounded up to the next 8-byte boundary) and the header is rebuilt
-/// with the extra bytes inserted — all subsequent load commands shift forward.
-///
-/// Returns the (possibly modified) buffer. Panics if the buffer is not a
-/// recognised 64-bit little-endian Mach-O file.
-fn macho_set_install_name(mut buf: Vec<u8>, new_name: &str) -> Vec<u8> {
-    const MH_MAGIC_64: u32 = 0xFEED_FACF;
-    const LC_ID_DYLIB: u32 = 0x0D;
-    const MACH_HEADER_64_SIZE: usize = 32;
-
-    let magic = u32::from_le_bytes(buf[0..4].try_into().unwrap());
-    if magic != MH_MAGIC_64 {
-        // Not a 64-bit LE Mach-O (e.g. fat binary or non-macOS). Skip.
-        return buf;
-    }
-
-    let ncmds = u32::from_le_bytes(buf[16..20].try_into().unwrap()) as usize;
-    // sizeofcmds is at offset 20
-    let sizeofcmds_orig = u32::from_le_bytes(buf[20..24].try_into().unwrap()) as usize;
-
-    let new_name_bytes = new_name.as_bytes();
-    // name field must be null-terminated and the whole cmdsize 8-byte aligned
-    let new_name_len = new_name_bytes.len() + 1; // +1 for null terminator
-
-    let mut off = MACH_HEADER_64_SIZE;
-    for _ in 0..ncmds {
-        let cmd = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
-        let cmdsize = u32::from_le_bytes(buf[off + 4..off + 8].try_into().unwrap()) as usize;
-        if cmd == LC_ID_DYLIB {
-            let name_off =
-                u32::from_le_bytes(buf[off + 8..off + 12].try_into().unwrap()) as usize;
-            let available = cmdsize - name_off; // bytes available for the name string
-
-            if new_name_len <= available {
-                // Fits in-place: overwrite and null-pad the rest.
-                let name_start = off + name_off;
-                let name_end = off + cmdsize;
-                buf[name_start..name_start + new_name_bytes.len()]
-                    .copy_from_slice(new_name_bytes);
-                for b in &mut buf[name_start + new_name_bytes.len()..name_end] {
-                    *b = 0;
-                }
-            } else {
-                // Doesn't fit: enlarge cmdsize to the next 8-byte multiple.
-                let new_cmdsize = (name_off + new_name_len + 7) & !7;
-                let extra = new_cmdsize - cmdsize;
-
-                // Insert `extra` zero bytes right after this load command.
-                let insert_at = off + cmdsize;
-                buf.splice(insert_at..insert_at, std::iter::repeat(0u8).take(extra));
-
-                // Update cmdsize in the load command.
-                buf[off + 4..off + 8].copy_from_slice(&(new_cmdsize as u32).to_le_bytes());
-
-                // Write the new name (null-padded to fill the slot).
-                let name_start = off + name_off;
-                let name_end = off + new_cmdsize;
-                buf[name_start..name_start + new_name_bytes.len()]
-                    .copy_from_slice(new_name_bytes);
-                for b in &mut buf[name_start + new_name_bytes.len()..name_end] {
-                    *b = 0;
-                }
-
-                // Update sizeofcmds in the Mach-O header.
-                let new_sizeofcmds = (sizeofcmds_orig + extra) as u32;
-                buf[20..24].copy_from_slice(&new_sizeofcmds.to_le_bytes());
-            }
-            return buf;
-        }
-        off += cmdsize;
-    }
-
-    // LC_ID_DYLIB not found — return unchanged (not a dylib or already patched).
-    buf
-}
-
-// ---------------------------------------------------------------------------
 // Linker directives
 // ---------------------------------------------------------------------------
 
