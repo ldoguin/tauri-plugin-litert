@@ -52,14 +52,48 @@ mod windows_stubs {
 
     #[no_mangle]
     pub unsafe extern "C" fn litert_lm_conversation_config_create(
-        _engine: *mut LiteRtLmEngine,
-        _session_config: *const LiteRtLmSessionConfig,
-        _system_message_json: *const c_char,
-        _tools_json: *const c_char,
-        _messages_json: *const c_char,
-        _enable_constrained_decoding: bool,
     ) -> *mut LiteRtLmConversationConfig {
         std::ptr::null_mut()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_config_set_session_config(
+        _config: *mut LiteRtLmConversationConfig,
+        _session_config: *const LiteRtLmSessionConfig,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_config_set_system_message(
+        _config: *mut LiteRtLmConversationConfig,
+        _system_message_json: *const c_char,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_config_set_tools(
+        _config: *mut LiteRtLmConversationConfig,
+        _tools_json: *const c_char,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_config_set_messages(
+        _config: *mut LiteRtLmConversationConfig,
+        _messages_json: *const c_char,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_config_set_enable_constrained_decoding(
+        _config: *mut LiteRtLmConversationConfig,
+        _enable_constrained_decoding: bool,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]
@@ -313,6 +347,7 @@ mod windows_stubs {
         _conversation: *mut LiteRtLmConversation,
         _message_json: *const c_char,
         _extra_context: *const c_char,
+        _optional_args: *mut LiteRtLmConversationOptionalArgs,
     ) -> *mut LiteRtLmJsonResponse {
         std::ptr::null_mut()
     }
@@ -336,10 +371,32 @@ mod windows_stubs {
         _conversation: *mut LiteRtLmConversation,
         _message_json: *const c_char,
         _extra_context: *const c_char,
+        _optional_args: *mut LiteRtLmConversationOptionalArgs,
         _callback: LiteRtLmStreamCallback,
         _callback_data: *mut c_void,
     ) -> c_int {
         0
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_optional_args_create(
+    ) -> *mut LiteRtLmConversationOptionalArgs {
+        std::ptr::null_mut()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_optional_args_delete(
+        _args: *mut LiteRtLmConversationOptionalArgs,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn litert_lm_conversation_optional_args_set_visual_token_budget(
+        _args: *mut LiteRtLmConversationOptionalArgs,
+        _budget: c_int,
+    ) {
+        // LiteRtLmC not available on Windows — no-op
     }
 
     #[no_mangle]

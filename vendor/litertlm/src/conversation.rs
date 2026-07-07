@@ -31,43 +31,44 @@ impl Conversation {
         params: SamplerParams,
         system: Option<&str>,
     ) -> Result<Self> {
-        let config = unsafe { sys::litert_lm_session_config_create() };
-        if config.is_null() {
+        // Build session config (sampler + max tokens).
+        let session_config = unsafe { sys::litert_lm_session_config_create() };
+        if session_config.is_null() {
             return Err(Error::NullPointer);
         }
         let raw_params = params.to_raw();
-        unsafe { sys::litert_lm_session_config_set_sampler_params(config, &raw_params) };
+        unsafe { sys::litert_lm_session_config_set_sampler_params(session_config, &raw_params) };
         if let Some(n) = params.max_output_tokens {
-            unsafe { sys::litert_lm_session_config_set_max_output_tokens(config, n) };
+            unsafe { sys::litert_lm_session_config_set_max_output_tokens(session_config, n) };
         }
 
-        // Format system message as the LiteRT-LM conversation JSON format.
-        let system_cstring = system
-            .map(|s| {
-                let json = format!(
-                    r#"{{"role":"system","content":[{{"type":"text","text":{}}}]}}"#,
-                    serde_json_escape(s)
-                );
-                CString::new(json).map_err(|_| Error::NullPointer)
-            })
-            .transpose()?;
-        let system_ptr = system_cstring
-            .as_ref()
-            .map_or(std::ptr::null(), |c| c.as_ptr());
-
-        let conv_config = unsafe {
-            sys::litert_lm_conversation_config_create(
-                engine.ptr.as_ptr(),
-                config,
-                system_ptr,       // system_message_json
-                std::ptr::null(), // tools_json
-                std::ptr::null(), // messages_json
-                false,            // enable_constrained_decoding
-            )
-        };
-        unsafe { sys::litert_lm_session_config_delete(config) };
+        // Build conversation config using the v0.13.1 setter-based API.
+        let conv_config = unsafe { sys::litert_lm_conversation_config_create() };
         if conv_config.is_null() {
+            unsafe { sys::litert_lm_session_config_delete(session_config) };
             return Err(Error::NullPointer);
+        }
+        unsafe {
+            sys::litert_lm_conversation_config_set_session_config(conv_config, session_config)
+        };
+        unsafe { sys::litert_lm_session_config_delete(session_config) };
+
+        // Format system message as the LiteRT-LM conversation JSON format.
+        if let Some(s) = system {
+            let json = format!(
+                r#"{{"role":"system","content":[{{"type":"text","text":{}}}]}}"#,
+                serde_json_escape(s)
+            );
+            let system_cstring = CString::new(json).map_err(|_| {
+                unsafe { sys::litert_lm_conversation_config_delete(conv_config) };
+                Error::NullPointer
+            })?;
+            unsafe {
+                sys::litert_lm_conversation_config_set_system_message(
+                    conv_config,
+                    system_cstring.as_ptr(),
+                )
+            };
         }
 
         let conv_ptr =
@@ -189,10 +190,7 @@ impl Conversation {
                 self.ptr.as_ptr(),
                 msg_cstr.as_ptr(),
                 ctx_ptr,
-                // optional_args only exists in the Linux prebuilt headers (v0.13.1+).
-                // Windows, macOS, and Android ship the 5-param v0.10.x ABI.
-                #[cfg(target_os = "linux")]
-                std::ptr::null_mut(),
+                std::ptr::null_mut(), // optional_args: null → use defaults (v0.13.1+)
                 Some(trampoline),
                 &mut state as *mut State as *mut c_void,
             )

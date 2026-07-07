@@ -51,11 +51,14 @@ fn prebuilt_for(target: &str) -> Option<Prebuilt> {
             size: 122_397_712,
         },
         "aarch64-apple-darwin" => Prebuilt {
-            url: "https://github.com/offbit-ai/LiteRT/releases/download/litert-lm-v0.10.2/libLiteRtLmC.dylib",
-            zip_entry: None,
+            // v0.13.1 ships inside the litert-lm-api Python wheel for macOS arm64.
+            // The dylib is named liblitert-lm.dylib inside the wheel; we extract
+            // and rename it to libLiteRtLmC.dylib to match the link name.
+            url: "https://files.pythonhosted.org/packages/58/ae/5d1e2862d14ad1b08bdbc3392574dde37b98a06f4efb5181d946766ec81c/litert_lm_api-0.13.1-py3-none-macosx_12_0_arm64.whl",
+            zip_entry: Some("litert_lm/liblitert-lm.dylib"),
             local_name: "libLiteRtLmC.dylib",
-            sha256: "616c71d3f52d7b6e7847cba2a3876890aeac993e27ec147dbf1c7de4fd786456",
-            size: 28_862_192,
+            sha256: "1718b2ea1acd1e0195fb45c8fad3517d273f96a5d19f193fd850a6d8917be32d",
+            size: 63_993_712,
         },
         // Google has not shipped a LiteRtLmC.dll for Windows as of v0.10.2.
         // The crate compiles (bindings are identical to MSVC) but LLM inference
