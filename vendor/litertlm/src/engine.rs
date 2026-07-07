@@ -55,6 +55,10 @@ pub struct EngineSettings {
     audio_backend: Option<Backend>,
     max_num_tokens: Option<i32>,
     cache_dir: Option<PathBuf>,
+    /// Number of tokens processed per GPU dispatch during prefill.
+    /// Smaller values reduce per-dispatch latency, avoiding Metal's 30s
+    /// command-buffer timeout on large prompts. None = engine default.
+    prefill_chunk_size: Option<i32>,
 }
 
 impl EngineSettings {
@@ -70,6 +74,7 @@ impl EngineSettings {
             audio_backend: None,
             max_num_tokens: None,
             cache_dir: None,
+            prefill_chunk_size: None,
         }
     }
 
@@ -107,6 +112,18 @@ impl EngineSettings {
     #[must_use]
     pub fn cache_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.cache_dir = Some(dir.into());
+        self
+    }
+
+    /// Number of tokens per GPU dispatch during prefill.
+    ///
+    /// Smaller values reduce per-dispatch latency. On Metal, each dispatch
+    /// must complete within 30 seconds or the command buffer is aborted.
+    /// Setting this to 512 or lower prevents timeouts on large prompts with
+    /// GPU backends. `None` uses the engine's built-in default.
+    #[must_use]
+    pub fn prefill_chunk_size(mut self, n: i32) -> Self {
+        self.prefill_chunk_size = Some(n);
         self
     }
 }
@@ -184,6 +201,9 @@ impl Engine {
 
         if let Some(n) = settings.max_num_tokens {
             unsafe { sys::litert_lm_engine_settings_set_max_num_tokens(raw_settings, n) };
+        }
+        if let Some(n) = settings.prefill_chunk_size {
+            unsafe { sys::litert_lm_engine_settings_set_prefill_chunk_size(raw_settings, n) };
         }
         if let Some(ref dir) = settings.cache_dir {
             let dir_str = path_to_cstring(dir)?;

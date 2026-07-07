@@ -71,6 +71,9 @@ impl<R: Runtime> LiteRtLm<R> {
         if let Some(n) = opts.max_tokens {
             settings = settings.max_num_tokens(n);
         }
+        if let Some(n) = opts.prefill_chunk_size {
+            settings = settings.prefill_chunk_size(n);
+        }
         if let Some(ref dir) = opts.cache_dir {
             // Ensure the directory exists — LiteRT needs it writable so it can
             // create the weight/shader cache on the first run.

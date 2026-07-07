@@ -14,6 +14,9 @@ pub struct LoadLmModelOptions {
     pub accelerator: Accelerator,
     /// Maximum context window in tokens. `None` = model default.
     pub max_tokens: Option<i32>,
+    /// Tokens per GPU dispatch during prefill. Smaller values avoid Metal's
+    /// 30s command-buffer timeout on large prompts. `None` = engine default.
+    pub prefill_chunk_size: Option<i32>,
     /// Directory for runtime caches (KV cache, compiled shaders).
     pub cache_dir: Option<String>,
     /// Enable vision (multimodal) backend. Required for models like Gemma 4 E2B/E4B
