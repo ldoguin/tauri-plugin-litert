@@ -71,8 +71,12 @@ impl<R: Runtime> LiteRtLm<R> {
         if let Some(n) = opts.max_tokens {
             settings = settings.max_num_tokens(n);
         }
+        // prefill_chunk_size is only valid for the CPU backend — the C API
+        // rejects it with "Expected type: CpuConfig but got: GpuConfig" on GPU.
         if let Some(n) = opts.prefill_chunk_size {
-            settings = settings.prefill_chunk_size(n);
+            if backend == Backend::Cpu {
+                settings = settings.prefill_chunk_size(n);
+            }
         }
         if let Some(ref dir) = opts.cache_dir {
             // Ensure the directory exists — LiteRT needs it writable so it can
@@ -83,8 +87,27 @@ impl<R: Runtime> LiteRtLm<R> {
             settings = settings.cache_dir(dir);
         }
 
-        let engine = Engine::new(settings)
-            .map_err(|e| Error::Backend(format!("Engine::new: {e}")))?;
+        let engine = Engine::new(settings).or_else(|e| {
+            // The MLDrift weight/shader cache can become corrupt (e.g. after a
+            // crash mid-write). If engine creation fails and a cache dir was
+            // configured, wipe it and retry once with a fresh cache.
+            if let Some(ref dir) = opts.cache_dir {
+                let dir_path = std::path::Path::new(dir);
+                if dir_path.exists() {
+                    let _ = std::fs::remove_dir_all(dir_path);
+                    let _ = std::fs::create_dir_all(dir_path);
+                    let mut retry_settings = EngineSettings::new(&opts.model_path)
+                        .backend(backend)
+                        .cache_dir(dir);
+                    if let Some(n) = opts.max_tokens {
+                        retry_settings = retry_settings.max_num_tokens(n);
+                    }
+                    return Engine::new(retry_settings)
+                        .map_err(|e2| Error::Backend(format!("Engine::new (retry after cache wipe): {e2}")));
+                }
+            }
+            Err(Error::Backend(format!("Engine::new: {e}")))
+        })?;
 
         let info = LmModelInfo {
             model_id: opts.model_id.clone(),
