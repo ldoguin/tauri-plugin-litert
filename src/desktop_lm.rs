@@ -129,7 +129,7 @@ impl<R: Runtime> LiteRtLm<R> {
             let loaded = models
                 .get(&input.model_id)
                 .ok_or_else(|| Error::ModelNotFound(input.model_id.clone()))?;
-            (Arc::clone(&loaded.engine), sampler_params(&input.sampler), input.prompt.clone(), input.system_instruction.clone())
+            (Arc::clone(&loaded.engine), sampler_params_for_backend(&input.sampler, &loaded.info.accelerator), input.prompt.clone(), input.system_instruction.clone())
         }; // mutex released here
 
         let _conv_guard = self.conv_lock.lock().unwrap();
@@ -169,7 +169,7 @@ impl<R: Runtime> LiteRtLm<R> {
             let loaded = models
                 .get(&input.model_id)
                 .ok_or_else(|| Error::ModelNotFound(input.model_id.clone()))?;
-            (Arc::clone(&loaded.engine), sampler_params(&input.sampler), input.prompt.clone(), input.system_instruction.clone())
+            (Arc::clone(&loaded.engine), sampler_params_for_backend(&input.sampler, &loaded.info.accelerator), input.prompt.clone(), input.system_instruction.clone())
         }; // mutex released here
 
         let model_id = input.model_id.clone();
@@ -254,13 +254,19 @@ fn accel_to_backend(a: &Accelerator) -> Backend {
 }
 
 fn sampler_params(opts: &SamplerOptions) -> SamplerParams {
-    // Call top_k first, top_p last — each setter overwrites the sampler type,
-    // so the last call wins. TopP is CPU-compatible; TopK requires the WebGPU
-    // sampler delegate which is unavailable on many desktop GPUs.
-    let mut p = SamplerParams::default()
-        .temperature(opts.temperature)
-        .top_k(opts.top_k)
-        .top_p(opts.top_p);
+    sampler_params_for_backend(opts, &Accelerator::Cpu)
+}
+
+fn sampler_params_for_backend(opts: &SamplerOptions, accel: &Accelerator) -> SamplerParams {
+    // TopK uses the WebGPU sampler delegate (libLiteRtTopKWebGpuSampler) and
+    // is required when the main backend is GPU — the CPU TopP sampler crashes
+    // at runtime when the model's KV-cache lives on the GPU (top_p_cpu_sampler
+    // cannot read GPU tensors). TopP is only safe on CPU.
+    let mut p = SamplerParams::default().temperature(opts.temperature);
+    p = match accel {
+        Accelerator::Gpu | Accelerator::Npu => p.top_k(opts.top_k),
+        Accelerator::Cpu => p.top_k(opts.top_k).top_p(opts.top_p),
+    };
     if let Some(n) = opts.max_output_tokens {
         p = p.max_output_tokens(n);
     }
