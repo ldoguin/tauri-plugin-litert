@@ -258,13 +258,15 @@ fn sampler_params(opts: &SamplerOptions) -> SamplerParams {
 }
 
 fn sampler_params_for_backend(opts: &SamplerOptions, accel: &Accelerator) -> SamplerParams {
-    // TopK uses the WebGPU sampler delegate (libLiteRtTopKWebGpuSampler) and
-    // is required when the main backend is GPU — the CPU TopP sampler crashes
-    // at runtime when the model's KV-cache lives on the GPU (top_p_cpu_sampler
-    // cannot read GPU tensors). TopP is only safe on CPU.
+    // On GPU/NPU: use Greedy (argmax) sampling. The TopK WebGPU delegate
+    // (libLiteRtTopKWebGpuSampler) is loaded via dlopen and requires the dylib
+    // to be co-located with libLiteRtLmC — this is not guaranteed at runtime.
+    // The CPU TopP sampler crashes when tensors live on GPU. Greedy has no
+    // external delegate dependency and works reliably on all backends.
+    // On CPU: use TopP which runs entirely in-process.
     let mut p = SamplerParams::default().temperature(opts.temperature);
     p = match accel {
-        Accelerator::Gpu | Accelerator::Npu => p.top_k(opts.top_k),
+        Accelerator::Gpu | Accelerator::Npu => p.greedy(),
         Accelerator::Cpu => p.top_k(opts.top_k).top_p(opts.top_p),
     };
     if let Some(n) = opts.max_output_tokens {
